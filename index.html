@@ -115,8 +115,6 @@
 
                 if (response.ok) {
                     const result = await response.json();
-                    accessToken = result.access_token;
-                    document.cookie = `access_token=${accessToken}; path=/`;
                     alert('Login successful!');
                 } else {
                     alert('Login failed!');
