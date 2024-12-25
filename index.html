@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stripe Payment</title>
+    <script src="https://js.stripe.com/v3/"></script>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 50px;
+            text-align: center;
+        }
+
+        #card-element {
+            border: 1px solid #ccc;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+
+        #submit-button {
+            background-color: #6772e5;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        #submit-button:hover {
+            background-color: #5469d4;
+        }
+
+        #payment-message {
+            margin-top: 20px;
+            display: none;
+        }
+
+        .login-form {
+            margin-bottom: 20px;
+        }
+
+        .spinner-border {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Stripe Payment</h1>
+    <p>Enter your card details below to complete the payment.</p>
+
+    <!-- Login Form -->
+    <div class="login-form">
+        <input type="text" id="username" class="form-control" placeholder="Email" value="johndoe@example.com">
+        <input type="password" id="password" class="form-control" placeholder="Password" value="Password123">
+        <button id="login-button" class="btn btn-primary" type="button">Login</button>
+    </div>
+
+    <!-- Stripe Elements Placeholder -->
+    <form id="payment-form">
+        <div id="card-element"><!-- Stripe.js injects the card form here --></div>
+        <button id="submit-button" class="btn btn-primary" type="button">Pay</button>
+        <div class="spinner-border text-primary" role="status" id="loading-spinner">
+            <span class="sr-only">Loading...</span>
+        </div>
+    </form>
+
+    <!-- Message Area -->
+    <div id="payment-message" class="alert"></div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+        const API_BASE_URL = 'https://fastapi-boilerplate-production-1144.up.railway.app';
+        const stripe = Stripe('pk_test_51Lt322SJMCtLLZlNLx1XeKUtKIfvXdV1VG2Qdu4vr3CzrV9paqS963a6wQQFhvSTCTQj2wrgvANd8Ig6yQUTcqkd00vBKxvlRO');
+        const urlParams = new URLSearchParams(window.location.search);
+        const clientSecret = urlParams.get('client_secret');
+        let accessToken = '';
+
+        if (!clientSecret) {
+            document.getElementById('payment-message').textContent = 'Client secret is missing.';
+            document.getElementById('payment-message').style.display = 'block';
+            document.getElementById('submit-button').disabled = true;
+        }
+
+        const elements = stripe.elements();
+        const cardElement = elements.create('card');
+        cardElement.mount('#card-element');
+
+        const form = document.getElementById('payment-form');
+        const submitButton = document.getElementById('submit-button');
+        const paymentMessage = document.getElementById('payment-message');
+        const loginButton = document.getElementById('login-button');
+        const loadingSpinner = document.getElementById('loading-spinner');
+
+        loginButton.addEventListener('click', async () => {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/auth/log-in`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email: username, password }),
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    accessToken = result.access_token;
+                    document.cookie = `access_token=${accessToken}; path=/`;
+                    alert('Login successful!');
+                } else {
+                    alert('Login failed!');
+                }
+            } catch (err) {
+                alert('An error occurred during login.');
+            }
+        });
+
+        submitButton.addEventListener('click', async () => {
+            submitButton.disabled = true;
+            loadingSpinner.style.display = 'inline-block';
+
+            const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+                payment_method: {
+                    card: cardElement,
+                    billing_details: {
+                        name: 'Customer Name',
+                    },
+                },
+            });
+
+            if (error) {
+                paymentMessage.textContent = error.message;
+                paymentMessage.className = 'alert alert-danger';
+                paymentMessage.style.display = 'block';
+                submitButton.disabled = false;
+                loadingSpinner.style.display = 'none';
+            } else if (paymentIntent && paymentIntent.status === 'succeeded') {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/payments/confirm_payment`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${accessToken}`,
+                        },
+                        body: JSON.stringify({ payment_intent_id: paymentIntent.id }),
+                    });
+
+                    if (response.ok) {
+                        const result = await response.json();
+                        paymentMessage.textContent = result.message || 'Payment successful!';
+                        paymentMessage.className = 'alert alert-success';
+                    } else {
+                        paymentMessage.textContent = 'Payment confirmation failed on the server.';
+                        paymentMessage.className = 'alert alert-danger';
+                    }
+                } catch (err) {
+                    paymentMessage.textContent = 'An error occurred while confirming the payment.';
+                    paymentMessage.className = 'alert alert-danger';
+                }
+
+                paymentMessage.style.display = 'block';
+                loadingSpinner.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+
+</html>
